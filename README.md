@@ -1,0 +1,223 @@
+# AstrBot GitHub Webhook Plugin
+
+AstrBot 插件，用于接收 GitHub 事件（push、issues、pull requests 等）并转发到聊天平台（QQ 群组、私聊等）。
+
+## 功能特性
+
+- ✅ 接收 GitHub Webhook 事件
+- ✅ 支持 Push 事件（代码提交）
+- ✅ 实时转发到指定的聊天平台群组/用户
+- ✅ 自定义端口号配置
+- ✅ 简洁的消息格式，包含关键信息
+- 🔜 支持更多事件类型（Issues、Pull Requests、Releases）
+- 🔜 Webhook Secret 签名验证
+- 🔜 自定义消息模板
+
+## 安装
+
+### 1. 克隆插件到 AstrBot 插件目录
+
+```bash
+cd AstrBot/data/plugins
+git clone https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook.git
+```
+
+### 2. 安装依赖
+
+```bash
+cd astrbot_plugin_github_webhook
+pip install -r requirements.txt
+```
+
+或使用 AstrBot 推荐的包管理器（如 uv）：
+
+```bash
+uv pip install -r requirements.txt
+```
+
+### 3. 配置插件
+
+在 AstrBot WebUI 中配置插件，或编辑配置文件：
+
+`data/config/astrbot_plugin_github_webhook_config.json`
+
+```json
+{
+  "port": 8080,
+  "target_umo": "platform_id:GroupMessage:群号"
+}
+```
+
+#### 配置项说明
+
+- **port** (int, 默认 8080): Webhook 服务器监听端口
+- **target_umo** (string, 必填): 目标会话标识符（UMO）
+  - 格式：`platform_id:message_type:session_id`
+  - 如何获取 UMO：在目标群组中发送 `/sid` 命令
+
+### 4. 重启 AstrBot
+
+重启 AstrBot 以加载插件：
+
+```bash
+# 如果使用 systemd
+sudo systemctl restart astrbot
+
+# 或手动重启
+Ctrl+C 停止后重新运行
+```
+
+查看日志确认插件已加载：
+
+```
+[INFO] GitHub Webhook server started on port 8080
+```
+
+## 配置 GitHub Webhook
+
+### 1. 打开 GitHub 仓库设置
+
+进入你的 GitHub 仓库 → **Settings** → **Webhooks** → **Add webhook**
+
+### 2. 配置 Webhook
+
+- **Payload URL**: `http://你的服务器IP:配置的端口/webhook`
+  - 例如：`http://123.45.67.89:8080/webhook`
+- **Content type**: `application/json`
+- **Secret** (可选): 配置 Webhook 密钥（未来版本支持）
+- **Events**: 选择需要触发的事件
+  - 建议勾选：`Pushes`, `Issues`, `Pull requests`
+- **Active**: ✅ 勾选
+
+### 3. 点击 "Add webhook"
+
+GitHub 会发送测试 Ping 事件，检查 AstrBot 日志确认收到：
+
+```
+[INFO] GitHub Webhook: Received event type: ping
+```
+
+## 使用示例
+
+### Push 事件消息格式
+
+```
+📦 GitHub Push Event
+👤 username pushed to owner/repo
+🌿 Branch: main
+💬 Fix webhook message sending issue
+🔗 Commit: abc1234
+📎 https://github.com/owner/repo/commit/abc1234
+```
+
+## 获取目标 UMO
+
+1. 加入目标群组
+2. 在群组中发送命令：`/sid`
+3. AstrBot 会返回当前会话的 UMO，例如：
+   ```
+   UMO: 「default:GroupMessage:1078537517」 此值可用于设置白名单。
+   ```
+4. 将此 UMO 填入插件的 `target_umo` 配置项
+
+## 防火墙配置
+
+确保服务器防火墙允许访问配置的端口（默认 8080）：
+
+```bash
+# UFW (Ubuntu/Debian)
+sudo ufw allow 8080/tcp
+
+# firewalld (CentOS/RHEL)
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload
+
+# 云服务商安全组
+# 在阿里云/腾讯云/AWS 控制台添加入站规则开放 8080 端口
+```
+
+## 目录结构
+
+```
+astrbot_plugin_github_webhook/
+├── main.py              # 插件主文件
+├── metadata.yaml        # 插件元数据
+├── requirements.txt      # Python 依赖
+├── _conf_schema.json    # 配置架构（WebUI 使用）
+├── .gitignore          # Git 忽略文件
+├── LICENSE             # MIT 许可证
+└── README.md           # 本文件
+```
+
+## 依赖
+
+- [aiohttp](https://docs.aiohttp.org/) ≥ 3.11.0 - 异步 HTTP 服务器
+
+## 开发计划
+
+- [ ] Issues 事件支持
+- [ ] Pull Request 事件支持
+- [ ] Release 事件支持
+- [ ] Webhook Secret 验证
+- [ ] 自定义消息模板（Jinja2）
+- [ ] Agent 集成（智能消息生成）
+- [ ] 消息限流
+- [ ] 分支过滤（仅监听 main 分支）
+- [ ] 多目标支持（不同事件发到不同群组）
+
+## 故障排查
+
+### 问题：Webhook 收不到消息
+
+**检查清单：**
+1. AstrBot 是否正常运行
+2. 插件是否已加载（查看日志）
+3. 端口 8080 是否开放（使用 `telnet 服务器IP 8080` 测试）
+4. GitHub Webhook 配置的 URL 是否正确
+5. 服务器防火墙/安全组是否开放端口
+
+### 问题：收到 Webhook 但未转发消息
+
+**检查清单：**
+1. `target_umo` 配置是否正确
+2. UMO 格式是否为 `platform_id:GroupMessage:群号`
+3. AstrBot 是否能正常发送消息（手动测试）
+4. 查看日志中的错误信息
+
+### 问题：日志显示 "Platform not found"
+
+**原因：** UMO 中的 platform_id 错误
+
+**解决方法：**
+1. 在目标群组发送 `/sid` 获取正确的 UMO
+2. 使用返回的 UMO 更新配置
+3. 重启插件
+
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 提交 Pull Request
+
+## 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
+
+## 作者
+
+AstrBot Team
+
+## 致谢
+
+- [AstrBot](https://github.com/AstrBotDevs/AstrBot) - 强大的聊天机器人框架
+- [GitHub Webhooks](https://docs.github.com/en/developers/webhooks-and-events/webhooks) - GitHub 官方文档
+
+## 相关链接
+
+- [AstrBot 文档](https://docs.astrbot.net)
+- [AstrBot 插件开发指南](https://docs.astrbot.net/dev/star/introduction)
+- [GitHub Webhooks 文档](https://docs.github.com/en/developers/webhooks-and-events/webhooks)

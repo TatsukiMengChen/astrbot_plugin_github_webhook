@@ -1,0 +1,15 @@
+{
+  "port": {
+    "description": "Webhook 服务器端口",
+    "type": "int",
+    "default": 8080,
+    "hint": "接收 GitHub webhook 请求的端口号，确保防火墙允许该端口"
+  },
+  "target_umo": {
+    "description": "目标 UMO",
+    "type": "string",
+    "default": "",
+    "obvious_hint": true,
+    "hint": "接收 GitHub 事件消息的群组或用户 UMO（用户/群组唯一标识符）。在消息事件中可以通过 event.session_id 获取。"
+  }
+}
