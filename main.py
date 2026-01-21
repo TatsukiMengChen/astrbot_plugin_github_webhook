@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from aiohttp import web
 from astrbot.api.star import Context, Star, register
 from astrbot.api import all as api, AstrBotConfig
@@ -37,6 +38,12 @@ class GitHubWebhookPlugin(Star):
         self.webhook_secret = config.get("webhook_secret", "")
         self.rate_limit = config.get("rate_limit", 10)
 
+        # Agent 配置
+        self.enable_agent = config.get("enable_agent", "false").lower() == "true"
+        self.agent_id = config.get("agent_id", "")
+        self.agent_timeout = config.get("agent_timeout", 30)
+        self.agent_system_prompt = config.get("agent_system_prompt", "")
+
         # Initialize rate limiter (0 means no limit)
         if self.rate_limit > 0:
             self.rate_limiter = RateLimiter(max_requests=self.rate_limit)
@@ -61,6 +68,18 @@ class GitHubWebhookPlugin(Star):
                 f"GitHub Webhook: Rate limiting enabled "
                 f"({self.rate_limit} requests/minute)"
             )
+
+        # Agent 配置日志
+        if self.enable_agent:
+            logger.info("GitHub Webhook: Agent mode enabled")
+            if self.agent_id:
+                logger.info(f"GitHub Webhook: Using Agent ID: {self.agent_id}")
+            else:
+                logger.info("GitHub Webhook: Using default Agent")
+            if self.agent_system_prompt:
+                logger.info("GitHub Webhook: Custom agent system prompt configured")
+        else:
+            logger.info("GitHub Webhook: Agent mode disabled, using default templates")
 
         asyncio.create_task(self.start_server())
 
@@ -133,9 +152,117 @@ class GitHubWebhookPlugin(Star):
             return web.Response(status=500, text="Internal server error")
 
         if message:
-            await self.send_message(message)
+            if self.enable_agent:
+                await self.send_with_agent(message, data, event_type)
+            else:
+                await self.send_message(message)
 
         return web.Response(status=200, text="OK")
+
+    async def send_with_agent(self, message: str, data: dict, event_type: str):
+        """使用 Agent 生成个性化消息并发送"""
+        try:
+            # 构建 Agent 任务的 prompt
+            event_name = {
+                "push": "代码推送",
+                "issues": "问题",
+                "pull_request": "拉取请求",
+            }.get(event_type, event_type)
+
+            # 构建 Agent 输入信息
+            agent_input = f"""你是一个 GitHub 事件助手。请根据以下 GitHub {event_name}事件，生成一条简洁、有趣的消息通知，发到QQ群组。
+
+事件类型：{event_type}
+
+事件详情：
+{message}
+
+要求：
+1. 消息要简洁明了
+2. 可以使用 emoji 增加趣味性
+3. 保留关键信息（作者、仓库、标题、URL等）
+4. 如果有链接（commit URL、issue URL、PR URL），必须保留
+5. 使用友好、生动的语气
+
+请直接输出最终的消息内容，不要有多余的解释。
+"""
+
+            logger.info(
+                f"GitHub Webhook: Calling Agent {self.agent_id} for {event_type} event"
+            )
+            logger.info(f"GitHub Webhook: Agent prompt preview: {agent_input[:100]}...")
+
+            # 调用 Agent
+            try:
+                agent_response = await asyncio.wait_for(
+                    self.context.tool_loop_agent(
+                        agent_input, agent_id=self.agent_id if self.agent_id else None
+                    ),
+                    timeout=self.agent_timeout,
+                )
+                logger.info(
+                    f"GitHub Webhook: Agent response received, length: {len(str(agent_response)) if agent_response else 0}"
+                )
+
+                # 从 Agent 响应中提取纯文本内容
+                if agent_response:
+                    # 尝试解析 Agent 响应
+                    import re
+
+                    # 移除可能的 XML 标记或其他标记
+                    text_content = str(agent_response)
+
+                    # 清理可能的额外解释
+                    text_content = re.sub(
+                        r"^[\s\S]*[:：]\s*", "", text_content, flags=re.MULTILINE
+                    )
+                    text_content = re.sub(
+                        r"^[\s\S]*[:：]\s*", "", text_content, flags=re.IGNORECASE
+                    )
+
+                    # 移除常见的解释性前缀
+                    text_content = re.sub(
+                        r"^(最终消息|输出|结果|message|content)[：：]\s*",
+                        "",
+                        text_content,
+                        flags=re.IGNORECASE,
+                    )
+
+                    # 清理空行
+                    text_content = "\n".join(
+                        line.strip()
+                        for line in text_content.split("\n")
+                        if line.strip()
+                    )
+
+                    if text_content.strip():
+                        generated_message = text_content.strip()
+                        logger.info(
+                            f"GitHub Webhook: Generated message: {generated_message[:100]}..."
+                        )
+                        await self.send_message(generated_message)
+                    else:
+                        logger.warning(
+                            "GitHub Webhook: Agent returned empty content, falling back to template"
+                        )
+                        await self.send_message(message)
+                else:
+                    logger.warning(
+                        "GitHub Webhook: Agent returned None, falling back to template"
+                    )
+                    await self.send_message(message)
+
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"GitHub Webhook: Agent timeout after {self.agent_timeout} seconds, falling back to template"
+                )
+                await self.send_message(message)
+
+        except Exception as e:
+            # Agent 调用失败，使用模板作为降级方案
+            logger.error(f"GitHub Webhook: Agent invocation failed: {e}")
+            logger.error(f"GitHub Webhook: Falling back to default template")
+            await self.send_message(message)
 
     async def send_message(self, message: str):
         if not self.target_umo:
@@ -145,7 +272,6 @@ class GitHubWebhookPlugin(Star):
             return
 
         try:
-            # 正确构建消息链：Plain 组件直接作为参数，不是 chain 参数
             message_chain = api.MessageChain([Plain(message)])
             result = await self.context.send_message(self.target_umo, message_chain)
             logger.info(
