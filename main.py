@@ -8,13 +8,17 @@ from astrbot.api import all as api, AstrBotConfig
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
 
+from .handlers.push_handler import handle_push_event
+from .handlers.issues_handler import handle_issues_event
+from .handlers.pull_request_handler import handle_pull_request_event
+
 
 @register(
     "github_webhook",
     "AstrBot Team",
     "GitHub Webhook 接收插件 - 将 GitHub 事件转发到聊天平台",
-    "0.1.0",
-    "https://github.com/AstrBotDevs/astrbot_plugin_github_webhook",
+    "0.2.0",
+    "https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook",
 )
 class GitHubWebhookPlugin(Star):
     """GitHub Webhook receiver plugin."""
@@ -57,64 +61,19 @@ class GitHubWebhookPlugin(Star):
         if event_type == "ping":
             return web.Response(text="Pong")
 
+        message = None
+
         if event_type == "push":
-            await self.handle_push_event(data)
+            message = await handle_push_event(data, self.context)
+        elif event_type == "issues":
+            message = await handle_issues_event(data, self.context)
+        elif event_type == "pull_request":
+            message = await handle_pull_request_event(data, self.context)
 
-        return web.Response(status=200, text="OK")
-
-    async def handle_push_event(self, data: dict):
-        try:
-            pusher = data.get("pusher", {})
-            author_name = pusher.get("name", "Unknown")
-            author_login = pusher.get("email", "")
-
-            repository = data.get("repository", {})
-            repo_name = repository.get("full_name", "Unknown")
-
-            ref = data.get("ref", "")
-            branch = ref.replace("refs/heads/", "") if ref else "Unknown"
-
-            commits = data.get("commits", [])
-            if not commits:
-                logger.warning("GitHub Webhook: Push event has no commits")
-                return
-
-            commit = commits[0]
-            commit_message = commit.get("message", "No message")
-            commit_url = commit.get("url", "")
-            commit_id = commit.get("id", "")[:7]
-
-            message = self.format_push_message(
-                author_name=author_name,
-                repo_name=repo_name,
-                branch=branch,
-                commit_message=commit_message,
-                commit_url=commit_url,
-                commit_id=commit_id,
-            )
-
+        if message:
             await self.send_message(message)
 
-        except Exception as e:
-            logger.error(f"GitHub Webhook: Error handling push event: {e}")
-
-    def format_push_message(
-        self,
-        author_name: str,
-        repo_name: str,
-        branch: str,
-        commit_message: str,
-        commit_url: str,
-        commit_id: str,
-    ) -> str:
-        return (
-            f"📦 GitHub Push Event\n"
-            f"👤 {author_name} pushed to {repo_name}\n"
-            f"🌿 Branch: {branch}\n"
-            f"💬 {commit_message}\n"
-            f"🔗 Commit: {commit_id}\n"
-            f"📎 {commit_url}"
-        )
+        return web.Response(status=200, text="OK")
 
     async def send_message(self, message: str):
         if not self.target_umo:

@@ -10,6 +10,6 @@
     "type": "string",
     "default": "",
     "obvious_hint": true,
-    "hint": "接收 GitHub 事件消息的群组或用户 UMO（用户/群组唯一标识符）。在消息事件中可以通过 event.session_id 获取。"
+    "hint": "接收 GitHub 事件消息的群组或用户 UMO（用户/群组唯一标识符）。在消息事件中可以通过 event.session_id 获取。所有 GitHub 事件都会发送到此目标。"
   }
 }
