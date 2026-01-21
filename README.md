@@ -6,12 +6,14 @@ AstrBot 插件，用于接收 GitHub 事件（push、issues、pull requests 等�
 
 - ✅ 接收 GitHub Webhook 事件
 - ✅ 支持 Push 事件（代码提交）
+- ✅ 支持 Issues 事件（问题追踪）
+- ✅ 支持 Pull Request 事件（代码合并）
 - ✅ 实时转发到指定的聊天平台群组/用户
 - ✅ 自定义端口号配置
 - ✅ 简洁的消息格式，包含关键信息
-- 🔜 支持更多事件类型（Issues、Pull Requests、Releases）
 - 🔜 Webhook Secret 签名验证
 - 🔜 自定义消息模板
+- 🔜 Release 事件支持
 
 ## 安装
 
@@ -110,6 +112,44 @@ GitHub 会发送测试 Ping 事件，检查 AstrBot 日志确认收到：
 📎 https://github.com/owner/repo/commit/abc1234
 ```
 
+### Issues 事件消息格式
+
+#### Issue 打开
+```
+🆕 GitHub Issue Event
+👤 username opened issue in owner/repo
+📋 Issue #42: Bug report
+📎 https://github.com/owner/repo/issues/42
+```
+
+#### Issue 关闭
+```
+✅ GitHub Issue Event
+👤 username closed issue in owner/repo
+📋 Issue #42: Bug report
+📎 https://github.com/owner/repo/issues/42
+```
+
+### Pull Request 事件消息格式
+
+#### PR 打开
+```
+🆕 GitHub Pull Request Event
+👤 username opened PR in owner/repo
+📋 PR #10: Add new feature
+🌿 feature → main
+📎 https://github.com/owner/repo/pull/10
+```
+
+#### PR 合并
+```
+✅ GitHub Pull Request Event
+👤 username closed PR in owner/repo
+📋 PR #10: Add new feature
+🌿 feature → main
+📎 https://github.com/owner/repo/pull/10
+```
+
 ## 获取目标 UMO
 
 1. 加入目标群组
@@ -140,13 +180,23 @@ sudo firewall-cmd --reload
 
 ```
 astrbot_plugin_github_webhook/
-├── main.py              # 插件主文件
-├── metadata.yaml        # 插件元数据
-├── requirements.txt      # Python 依赖
-├── _conf_schema.json    # 配置架构（WebUI 使用）
-├── .gitignore          # Git 忽略文件
-├── LICENSE             # MIT 许可证
-└── README.md           # 本文件
+├── main.py                     # 插件主文件
+├── metadata.yaml               # 插件元数据
+├── requirements.txt             # Python 依赖
+├── _conf_schema.json           # 配置架构（WebUI 使用）
+├── handlers/                  # 事件处理器模块
+│   ├── __init__.py
+│   ├── push_handler.py         # Push 事件处理
+│   ├── issues_handler.py       # Issues 事件处理
+│   └── pull_request_handler.py # Pull Request 事件处理
+├── formatters/                # 消息格式化模块
+│   ├── __init__.py
+│   ├── push_formatter.py       # Push 消息格式化
+│   ├── issues_formatter.py     # Issues 消息格式化
+│   └── pull_request_formatter.py # Pull Request 消息格式化
+├── .gitignore                # Git 忽略文件
+├── LICENSE                   # MIT 许可证
+└── README.md                # 本文件
 ```
 
 ## 依赖
@@ -155,8 +205,8 @@ astrbot_plugin_github_webhook/
 
 ## 开发计划
 
-- [ ] Issues 事件支持
-- [ ] Pull Request 事件支持
+- [x] Issues 事件支持
+- [x] Pull Request 事件支持
 - [ ] Release 事件支持
 - [ ] Webhook Secret 验证
 - [ ] 自定义消息模板（Jinja2）
@@ -209,7 +259,7 @@ astrbot_plugin_github_webhook/
 
 ## 作者
 
-AstrBot Team
+TatsukiMengChen
 
 ## 致谢
 
