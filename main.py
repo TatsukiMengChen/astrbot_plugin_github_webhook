@@ -38,10 +38,23 @@ class GitHubWebhookPlugin(Star):
         self.webhook_secret = config.get("webhook_secret", "")
         self.rate_limit = config.get("rate_limit", 10)
 
-        # Agent 配置
-        self.enable_agent = config.get("enable_agent", "false").lower() == "true"
-        self.agent_id = config.get("agent_id", "")
-        self.agent_timeout = config.get("agent_timeout", 30)
+        # Agent 配置读取（兼容字符串和布尔值）
+        enable_agent_config = config.get("enable_agent", "false")
+        # 正确判断：只有明确的启用值才设为 True
+        if isinstance(enable_agent_config, bool):
+            self.enable_agent = enable_agent_config
+        elif isinstance(enable_agent_config, str):
+            self.enable_agent = enable_agent_config.lower() in (
+                "true",
+                "1",
+                "yes",
+                "on",
+            )
+        else:
+            self.enable_agent = False
+
+        self.llm_provider_id = config.get("llm_provider_id", "")
+        self.agent_timeout = int(config.get("agent_timeout", "30") or 30)
         self.agent_system_prompt = config.get("agent_system_prompt", "")
 
         # Initialize rate limiter (0 means no limit)
@@ -71,15 +84,17 @@ class GitHubWebhookPlugin(Star):
 
         # Agent 配置日志
         if self.enable_agent:
-            logger.info("GitHub Webhook: Agent mode enabled")
-            if self.agent_id:
-                logger.info(f"GitHub Webhook: Using Agent ID: {self.agent_id}")
+            logger.info("GitHub Webhook: LLM mode enabled")
+            if self.llm_provider_id:
+                logger.info(
+                    f"GitHub Webhook: Using LLM provider ID: {self.llm_provider_id}"
+                )
             else:
-                logger.info("GitHub Webhook: Using default Agent")
+                logger.info("GitHub Webhook: Using default LLM provider")
             if self.agent_system_prompt:
-                logger.info("GitHub Webhook: Custom agent system prompt configured")
+                logger.info("GitHub Webhook: Custom system prompt configured")
         else:
-            logger.info("GitHub Webhook: Agent mode disabled, using default templates")
+            logger.info("GitHub Webhook: LLM mode disabled, using default templates")
 
         asyncio.create_task(self.start_server())
 
@@ -160,17 +175,17 @@ class GitHubWebhookPlugin(Star):
         return web.Response(status=200, text="OK")
 
     async def send_with_agent(self, message: str, data: dict, event_type: str):
-        """使用 Agent 生成个性化消息并发送"""
+        """使用 LLM 生成个性化消息并发送"""
         try:
-            # 构建 Agent 任务的 prompt
+            # 构建 LLM 任务的 prompt
             event_name = {
                 "push": "代码推送",
                 "issues": "问题",
                 "pull_request": "拉取请求",
             }.get(event_type, event_type)
 
-            # 构建 Agent 输入信息
-            agent_input = f"""你是一个 GitHub 事件助手。请根据以下 GitHub {event_name}事件，生成一条简洁、有趣的消息通知，发到QQ群组。
+            # 构建 LLM 输入信息
+            llm_input = f"""你是一个 GitHub 事件助手。请根据以下 GitHub {event_name}事件，生成一条简洁、有趣的消息通知，发到QQ群组。
 
 事件类型：{event_type}
 
@@ -188,45 +203,49 @@ class GitHubWebhookPlugin(Star):
 """
 
             logger.info(
-                f"GitHub Webhook: Calling Agent {self.agent_id} for {event_type} event"
+                f"GitHub Webhook: Calling LLM {self.llm_provider_id} for {event_type} event"
             )
-            logger.info(f"GitHub Webhook: Agent prompt preview: {agent_input[:100]}...")
+            logger.info(f"GitHub Webhook: LLM prompt preview: {llm_input[:100]}...")
 
-            # 调用 Agent
+            # 获取 LLM provider ID
+            if self.llm_provider_id:
+                provider_id = self.llm_provider_id
+            else:
+                # 使用默认 provider
+                try:
+                    provider_id = await self.context.get_current_chat_provider_id(
+                        self.target_umo
+                    )
+                    logger.info(
+                        f"GitHub Webhook: Using default provider: {provider_id}"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"GitHub Webhook: Failed to get default provider: {e}, falling back to template"
+                    )
+                    await self.send_message(message)
+                    return
+
+            # 调用 LLM
             try:
-                agent_response = await asyncio.wait_for(
-                    self.context.tool_loop_agent(
-                        agent_input, agent_id=self.agent_id if self.agent_id else None
+                llm_response = await asyncio.wait_for(
+                    self.context.llm_generate(
+                        chat_provider_id=provider_id,
+                        prompt=llm_input,
+                        system_prompt=self.agent_system_prompt
+                        if self.agent_system_prompt
+                        else None,
                     ),
                     timeout=self.agent_timeout,
                 )
                 logger.info(
-                    f"GitHub Webhook: Agent response received, length: {len(str(agent_response)) if agent_response else 0}"
+                    f"GitHub Webhook: LLM response received, length: {len(llm_response.completion_text) if llm_response else 0}"
                 )
 
-                # 从 Agent 响应中提取纯文本内容
-                if agent_response:
-                    # 尝试解析 Agent 响应
-                    import re
-
-                    # 移除可能的 XML 标记或其他标记
-                    text_content = str(agent_response)
-
-                    # 清理可能的额外解释
-                    text_content = re.sub(
-                        r"^[\s\S]*[:：]\s*", "", text_content, flags=re.MULTILINE
-                    )
-                    text_content = re.sub(
-                        r"^[\s\S]*[:：]\s*", "", text_content, flags=re.IGNORECASE
-                    )
-
-                    # 移除常见的解释性前缀
-                    text_content = re.sub(
-                        r"^(最终消息|输出|结果|message|content)[：：]\s*",
-                        "",
-                        text_content,
-                        flags=re.IGNORECASE,
-                    )
+                # 从 LLM 响应中提取纯文本内容
+                if llm_response and llm_response.completion_text:
+                    # 直接使用 LLM 返回的文本
+                    text_content = llm_response.completion_text.strip()
 
                     # 清理空行
                     text_content = "\n".join(
@@ -235,32 +254,32 @@ class GitHubWebhookPlugin(Star):
                         if line.strip()
                     )
 
-                    if text_content.strip():
-                        generated_message = text_content.strip()
+                    if text_content:
+                        generated_message = text_content
                         logger.info(
                             f"GitHub Webhook: Generated message: {generated_message[:100]}..."
                         )
                         await self.send_message(generated_message)
                     else:
                         logger.warning(
-                            "GitHub Webhook: Agent returned empty content, falling back to template"
+                            "GitHub Webhook: LLM returned empty content, falling back to template"
                         )
                         await self.send_message(message)
                 else:
                     logger.warning(
-                        "GitHub Webhook: Agent returned None, falling back to template"
+                        "GitHub Webhook: LLM returned None or empty completion, falling back to template"
                     )
                     await self.send_message(message)
 
             except asyncio.TimeoutError:
                 logger.error(
-                    f"GitHub Webhook: Agent timeout after {self.agent_timeout} seconds, falling back to template"
+                    f"GitHub Webhook: LLM timeout after {self.agent_timeout} seconds, falling back to template"
                 )
                 await self.send_message(message)
 
         except Exception as e:
-            # Agent 调用失败，使用模板作为降级方案
-            logger.error(f"GitHub Webhook: Agent invocation failed: {e}")
+            # LLM 调用失败，使用模板作为降级方案
+            logger.error(f"GitHub Webhook: LLM invocation failed: {e}")
             logger.error(f"GitHub Webhook: Falling back to default template")
             await self.send_message(message)
 

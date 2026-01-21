@@ -25,27 +25,27 @@
     "hint": "每分钟允许的最大请求数。设置为 0 表示不限制。"
   },
   "enable_agent": {
-    "description": "启用 Agent",
+    "description": "启用 LLM 生成消息",
     "type": "text",
     "default": "false",
-    "hint": "是否使用 Agent 生成个性化的 GitHub 事件消息。启用后，Agent 会根据 GitHub 事件内容生成消息。支持值：\"true\" 或 \"false\""
+    "hint": "是否使用 LLM 生成个性化的 GitHub 事件消息。启用后，LLM 会根据 GitHub 事件内容生成消息。支持值：\"true\" 或 \"false\""
   },
-  "agent_id": {
-    "description": "Agent ID",
+  "llm_provider_id": {
+    "description": "LLM Provider ID",
     "type": "string",
     "default": "",
-    "hint": "使用的 Agent ID，必须在 AstrBot 中已配置。留空则使用默认 Agent。"
+    "hint": "使用的 LLM Provider ID，必须在 AstrBot 中已配置。留空则使用默认 Provider。"
   },
   "agent_timeout": {
-    "description": "Agent 超时时间（秒）",
+    "description": "LLM 超时时间（秒）",
     "type": "int",
     "default": 30,
-    "hint": "Agent 处理的超时时间，单位为秒。建议设置为 30-60 秒。"
+    "hint": "LLM 处理的超时时间，单位为秒。建议设置为 30-60 秒。"
   },
   "agent_system_prompt": {
-    "description": "Agent 自定义系统提示词",
-    "type": "string",
+    "description": "LLM 自定义系统提示词",
+    "type": "text",
     "default": "",
-    "hint": "为 Agent 添加自定义的系统提示词，可以定义消息的风格、语气等。留空则使用 Agent 配置中的默认提示词。"
+    "hint": "为 LLM 添加自定义的系统提示词，可以定义消息的风格、语气等。留空则使用默认提示词。"
   }
 }
