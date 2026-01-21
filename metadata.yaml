@@ -1,13 +1,11 @@
-name: github_webhook
+name: astrbot_plugin_github_webhook
 display_name: GitHub Webhook 插件
-author: TatsukiMengChen
+author: TatsukiMeng
 version: 0.4.0
 description: 将 GitHub 事件（push、issue、PR 等）转发到聊天平台的插件
-repository: https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook
+repo: https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook
 license: MIT
 tags:
-  - github
-  - webhook
-  - notification
-  - collaboration
+  - Github
 icon: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+social_link: https://mc.mimeng.top
