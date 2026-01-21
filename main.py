@@ -63,6 +63,19 @@ class GitHubWebhookPlugin(Star):
         else:
             self.rate_limiter = None
 
+        # 配置验证和完整日志
+        logger.info("=" * 60)
+        logger.info("GitHub Webhook: Configuration loaded")
+        logger.info(f"  target_umo: {self.target_umo}")
+        logger.info(f"  enable_agent: {self.enable_agent}")
+        logger.info(f"  llm_provider_id: {self.llm_provider_id or '(default)'}")
+        logger.info(f"  agent_timeout: {self.agent_timeout}s")
+        logger.info(
+            f"  agent_system_prompt: {len(self.agent_system_prompt) if self.agent_system_prompt else 0} chars"
+        )
+        logger.info(f"  rate_limit: {self.rate_limit} req/min")
+        logger.info("=" * 60)
+
         if not self.target_umo:
             logger.warning(
                 "GitHub Webhook: target_umo not configured, plugin may not work!"
@@ -82,7 +95,7 @@ class GitHubWebhookPlugin(Star):
                 f"({self.rate_limit} requests/minute)"
             )
 
-        # Agent 配置日志
+        # LLM 配置日志
         if self.enable_agent:
             logger.info("GitHub Webhook: LLM mode enabled")
             if self.llm_provider_id:
@@ -184,14 +197,12 @@ class GitHubWebhookPlugin(Star):
                 "pull_request": "拉取请求",
             }.get(event_type, event_type)
 
-            # 构建 LLM 输入信息
-            llm_input = f"""你是一个 GitHub 事件助手。请根据以下 GitHub {event_name}事件，生成一条简洁、有趣的消息通知，发到QQ群组。
+            # 构建 LLM 输入信息 - 优化结构，确保 GitHub 事件内容优先级最高
+            llm_input = f"""GitHub 事件信息：
 
-事件类型：{event_type}
-
-事件详情：
 {message}
 
+任务：生成一条简洁、有趣的 QQ 群消息通知。
 要求：
 1. 消息要简洁明了
 2. 可以使用 emoji 增加趣味性
@@ -202,10 +213,17 @@ class GitHubWebhookPlugin(Star):
 请直接输出最终的消息内容，不要有多余的解释。
 """
 
-            logger.info(
-                f"GitHub Webhook: Calling LLM {self.llm_provider_id} for {event_type} event"
-            )
-            logger.info(f"GitHub Webhook: LLM prompt preview: {llm_input[:100]}...")
+            # 诊断日志
+            logger.info("=" * 60)
+            logger.info(f"GitHub Webhook: LLM Processing for {event_type} event")
+            logger.info(f"  Provider: {self.llm_provider_id or '(default)'}")
+            logger.info(f"  Input length: {len(llm_input)} chars")
+            logger.info(f"  Input preview (first 300 chars): {llm_input[:300]}...")
+            if self.agent_system_prompt:
+                logger.info(
+                    f"  System prompt length: {len(self.agent_system_prompt)} chars"
+                )
+            logger.info("=" * 60)
 
             # 获取 LLM provider ID
             if self.llm_provider_id:
@@ -241,6 +259,20 @@ class GitHubWebhookPlugin(Star):
                 logger.info(
                     f"GitHub Webhook: LLM response received, length: {len(llm_response.completion_text) if llm_response else 0}"
                 )
+
+                # 诊断日志：输出长度和内容
+                output_text = llm_response.completion_text if llm_response else ""
+                logger.info(f"  Output length: {len(output_text)} chars")
+                if output_text:
+                    logger.info(
+                        f"  Output preview (first 300 chars): {output_text[:300]}..."
+                    )
+
+                # 检测输出是否可能被截断
+                if output_text and len(output_text) < 100:
+                    logger.warning(
+                        f"GitHub Webhook: LLM output suspiciously short (input: {len(llm_input)} chars, output: {len(output_text)} chars)"
+                    )
 
                 # 从 LLM 响应中提取纯文本内容
                 if llm_response and llm_response.completion_text:
