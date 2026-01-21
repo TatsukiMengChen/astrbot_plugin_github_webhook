@@ -2,7 +2,7 @@
 
 from astrbot.api import logger
 
-from .formatters.push_formatter import format_push_message
+from ..formatters.push_formatter import format_push_message
 
 
 async def handle_push_event(data: dict, context):

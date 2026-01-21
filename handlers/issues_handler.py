@@ -2,7 +2,7 @@
 
 from astrbot.api import logger
 
-from .formatters.issues_formatter import format_issue_message
+from ..formatters.issues_formatter import format_issue_message
 
 
 async def handle_issues_event(data: dict, context):
