@@ -11,5 +11,17 @@
     "default": "",
     "obvious_hint": true,
     "hint": "接收 GitHub 事件消息的群组或用户 UMO（用户/群组唯一标识符）。在消息事件中可以通过 event.session_id 获取。所有 GitHub 事件都会发送到此目标。"
+  },
+  "webhook_secret": {
+    "description": "Webhook Secret（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "GitHub Webhook Secret 密钥，用于验证请求来源。在 GitHub 仓库的 Webhook 设置中可以获取。留空则不验证签名。"
+  },
+  "rate_limit": {
+    "description": "请求速率限制",
+    "type": "int",
+    "default": 10,
+    "hint": "每分钟允许的最大请求数。设置为 0 表示不限制。"
   }
 }
