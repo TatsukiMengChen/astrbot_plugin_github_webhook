@@ -190,6 +190,171 @@ sudo firewall-cmd --reload
 # 在阿里云/腾讯云/AWS 控制台添加入站规则开放 8080 端口
 ```
 
+## Docker 部署
+
+如果你的 AstrBot 使用 Docker 部署，需要特别注意端口映射配置。
+
+### 注意事项
+
+**重要**：如果 AstrBot 在 Docker 容器中运行，容器的内部端口（如 6100）必须映射到宿主机端口，否则外部（包括 GitHub webhook）无法访问。
+
+### 方法 1：使用 Docker Compose（推荐）
+
+编辑 `docker-compose.yml`：
+
+```yaml
+version: '3'
+
+services:
+  astrbot:
+    image: ghcr.io/astrbotdev/astrbot:latest
+    container_name: astrbot
+    restart: unless-stopped
+    
+    # 数据卷映射
+    volumes:
+      - ./AstrBot:/app
+      - ./data:/app/data
+    
+    # ← 关键配置：端口映射
+    ports:
+      - "6100:6100"  # 宿主机:容器端口
+      - "6185:6185"  # WebUI 端口（如果需要访问）
+    
+    environment:
+      - TZ=Asia/Shanghai
+```
+
+**说明**：
+- `"6100:6100"` 表示：宿主机 6100 端口 → 容器 6100 端口
+- 插件配置的 `port` 参数（如 6100）应与容器端口对应（第二个 6100）
+
+### 方法 2：使用 docker run 命令
+
+```bash
+# 停止现有容器
+docker stop astrbot
+
+# 重新启动，添加端口映射
+docker run -d \
+  --name astrbot \
+  -v ./AstrBot:/app \
+  -v ./data:/app/data \
+  -p 6100:6100 \
+  -p 6185:6185 \
+  ghcr.io/astrbotdev/astrbot:latest
+```
+
+### 方法 3：在 OpenResty 上部署 Docker
+
+如果你在 OpenResty 面板上运行 Docker 容器：
+
+```yaml
+version: '3'
+
+services:
+  astrbot:
+    image: ghcr.io/astrbotdev/astrbot:latest
+    container_name: astrbot
+    restart: unless-stopped
+    
+    volumes:
+      - ./data:/app/data
+    
+    # OpenResty 特定配置
+    network_mode: service:webhook  # 连接到 webhook 服务网络
+    # 或使用桥接网络并映射端口
+    ports:
+      - "6100:6100"
+      - "6185:6185"
+    
+    environment:
+      - TZ=Asia/Shanghai
+```
+
+**OpenResty 配置**：
+1. 在 OpenResty → Services → webhook → Deploy Service
+2. 上传 docker-compose.yml 文件
+3. 点击 Deploy
+
+### 验证 Docker 端口映射
+
+```bash
+# 1. 查看容器端口映射
+docker port astrbot
+
+# 应该看到类似输出：
+# 6100/tcp -> 0.0.0.0:6100
+# 6185/tcp -> 0.0.0.0:6185
+
+# 2. 检查容器是否运行
+docker ps | grep astrbot
+
+# 3. 查看容器日志
+docker logs astrbot | tail -20
+
+# 4. 从宿主机测试端口
+curl -X POST http://localhost:6100/webhook \
+  -H "Content-Type: application/json" \
+  -d '{"ping": "test"}'
+```
+
+### Docker 端口配置 + 插件配置示例
+
+如果 Docker 映射为 `6100:6100`：
+
+```bash
+# 插件配置文件（data/config/astrbot_plugin_github_webhook_config.json）
+{
+  "port": 6100,  # ← 这里配置容器端口（不是宿主机端口）
+  "target_umo": "default:GroupMessage:群号",
+  "webhook_secret": "your_github_webhook_secret",
+  "rate_limit": 10
+}
+
+# GitHub Webhook 配置
+Payload URL: http://你的服务器IP:6100/webhook  # ← 使用宿主机端口
+```
+
+**关键区别**：
+- Docker `ports` 映射：`"6100:6100"` （宿主机:容器）
+- 插件配置 `port`: `6100` （容器内部端口）
+- GitHub webhook URL: `http://IP:6100` （使用宿主机端口）
+
+### 常见问题
+
+#### 问题 1：Connection refused
+
+**原因**：端口映射未正确配置或容器未启动
+
+**解决方法**：
+```bash
+# 检查容器状态
+docker ps -a | grep astrbot
+
+# 检查端口监听
+netstat -tlnp | grep 6100
+# 或
+ss -tlnp | grep 6100
+```
+
+#### 问题 2：No route to host
+
+**原因**：Docker 容器网络配置问题
+
+**解决方法**：
+```yaml
+# 在 docker-compose.yml 中添加
+network_mode: bridge  # 或根据 OpenResty 配置调整
+```
+
+#### 问题 3：GitHub webhook 超时
+
+**原因**：端口映射正确，但 Cloudflare 反向代理未正确转发
+
+**解决方法**：
+参考上面的 "配置 GitHub Webhook" 章节，确保 Cloudflare 或其他反向代理配置正确。
+
 ## 目录结构
 
 ```
