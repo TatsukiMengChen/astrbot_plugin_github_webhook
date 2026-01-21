@@ -101,6 +101,7 @@ Ctrl+C 停止后重新运行
   1. 在插件配置中设置 `webhook_secret` 字段
   2. 将此处生成的密钥复制到 GitHub Webhook 设置
   3. 用于验证请求来源，防止伪造请求
+  4. 留空则禁用签名验证（生产环境不推荐）
 - **Events**: 选择需要触发的事件
   - 建议勾选：`Pushes`, `Issues`, `Pull requests`
 - **Active**: ✅ 勾选
@@ -196,7 +197,7 @@ sudo firewall-cmd --reload
 
 ### 注意事项
 
-**重要**：如果 AstrBot 在 Docker 容器中运行，容器的内部端口（如 6100）必须映射到宿主机端口，否则外部（包括 GitHub webhook）无法访问。
+**重要**：如果 AstrBot 在 Docker 容器中运行，容器的内部端口（如 8080）必须映射到宿主机端口，否则外部（包括 GitHub webhook）无法访问。
 
 ### 方法 1：使用 Docker Compose（推荐）
 
@@ -218,16 +219,15 @@ services:
     
     # ← 关键配置：端口映射
     ports:
-      - "6100:6100"  # 宿主机:容器端口
-      - "6185:6185"  # WebUI 端口（如果需要访问）
+      - "8080:8080"  # 宿主机:容器端口
     
     environment:
       - TZ=Asia/Shanghai
 ```
 
 **说明**：
-- `"6100:6100"` 表示：宿主机 6100 端口 → 容器 6100 端口
-- 插件配置的 `port` 参数（如 6100）应与容器端口对应（第二个 6100）
+- `"8080:8080"` 表示：宿主机 8080 端口 → 容器 8080 端口
+- 插件配置的 `port` 参数应与容器端口一致（8080）
 
 ### 方法 2：使用 docker run 命令
 
@@ -240,42 +240,9 @@ docker run -d \
   --name astrbot \
   -v ./AstrBot:/app \
   -v ./data:/app/data \
-  -p 6100:6100 \
-  -p 6185:6185 \
+  -p 8080:8080 \
   ghcr.io/astrbotdev/astrbot:latest
 ```
-
-### 方法 3：在 OpenResty 上部署 Docker
-
-如果你在 OpenResty 面板上运行 Docker 容器：
-
-```yaml
-version: '3'
-
-services:
-  astrbot:
-    image: ghcr.io/astrbotdev/astrbot:latest
-    container_name: astrbot
-    restart: unless-stopped
-    
-    volumes:
-      - ./data:/app/data
-    
-    # OpenResty 特定配置
-    network_mode: service:webhook  # 连接到 webhook 服务网络
-    # 或使用桥接网络并映射端口
-    ports:
-      - "6100:6100"
-      - "6185:6185"
-    
-    environment:
-      - TZ=Asia/Shanghai
-```
-
-**OpenResty 配置**：
-1. 在 OpenResty → Services → webhook → Deploy Service
-2. 上传 docker-compose.yml 文件
-3. 点击 Deploy
 
 ### 验证 Docker 端口映射
 
@@ -284,8 +251,7 @@ services:
 docker port astrbot
 
 # 应该看到类似输出：
-# 6100/tcp -> 0.0.0.0:6100
-# 6185/tcp -> 0.0.0.0:6185
+# 8080/tcp -> 0.0.0.0.8080
 
 # 2. 检查容器是否运行
 docker ps | grep astrbot
@@ -294,66 +260,113 @@ docker ps | grep astrbot
 docker logs astrbot | tail -20
 
 # 4. 从宿主机测试端口
-curl -X POST http://localhost:6100/webhook \
+curl -X POST http://localhost:8080/webhook \
   -H "Content-Type: application/json" \
   -d '{"ping": "test"}'
 ```
 
 ### Docker 端口配置 + 插件配置示例
 
-如果 Docker 映射为 `6100:6100`：
+如果 Docker 端口映射为 `8080:8080`：
 
-```bash
-# 插件配置文件（data/config/astrbot_plugin_github_webhook_config.json）
+```json
+// 插件配置文件（data/config/astrbot_plugin_github_webhook_config.json）
 {
-  "port": 6100,  # ← 这里配置容器端口（不是宿主机端口）
+  "port": 8080,  // ← 这里配置容器端口（不是宿主机端口）
   "target_umo": "default:GroupMessage:群号",
   "webhook_secret": "your_github_webhook_secret",
   "rate_limit": 10
 }
 
-# GitHub Webhook 配置
-Payload URL: http://你的服务器IP:6100/webhook  # ← 使用宿主机端口
+// GitHub Webhook 配置
+Payload URL: http://你的服务器IP:8080/webhook  // ← 使用宿主机端口
 ```
 
 **关键区别**：
-- Docker `ports` 映射：`"6100:6100"` （宿主机:容器）
-- 插件配置 `port`: `6100` （容器内部端口）
-- GitHub webhook URL: `http://IP:6100` （使用宿主机端口）
+- Docker 端口映射：`"8080:8080"` （宿主机:容器端口）
+- 插件配置 `port`: `8080` （容器内部端口）
+- GitHub webhook URL: `http://IP:8080` （使用宿主机端口）
 
-### 常见问题
+## 常见问题
+
+### 问题：Webhook 收不到消息
+
+**检查清单：**
+1. AstrBot 是否正常运行
+2. 插件是否已加载（查看日志）
+3. 端口 8080 是否开放（使用 `telnet 服务器IP 8080` 测试）
+4. GitHub Webhook 配置的 URL 是否正确
+5. 服务器防火墙/安全组是否开放端口
+
+### 问题：收到 Webhook 但未转发消息
+
+**检查清单：**
+1. `target_umo` 配置是否正确
+2. UMO 格式是否为 `platform_id:GroupMessage:群号`
+3. AstrBot 是否能正常发送消息（手动测试）
+4. 查看日志中的错误信息
+
+### 问题：日志显示 "Platform not found"
+
+**原因**：UMO 中的 platform_id 错误
+
+**解决方法：**
+1. 在目标群组发送 `/sid` 获取正确的 UMO
+2. 使用返回的 UMO 更新配置
+
+### 问题：日志显示 "Invalid signature"
+
+**原因**：Webhook Secret 配置不正确或未同步
+
+**解决方法：**
+1. 检查 GitHub 仓库 Webhook 设置中的 Secret
+2. 确保插件配置中的 `webhook_secret` 与 GitHub 设置一致
+3. 更新配置后重启插件
+
+### 问题：日志显示 "Rate limit exceeded"
+
+**原因**：请求数量超过配置的速率限制
+
+**解决方法：**
+1. 增加 `rate_limit` 配置值（默认 10 请求/分钟）
+2. 设置为 0 禁用速率限制（不推荐）
+3. 检查是否有恶意请求导致限流
+
+### 问题：Docker 端口映射后仍然无法访问
 
 #### 问题 1：Connection refused
 
 **原因**：端口映射未正确配置或容器未启动
 
-**解决方法**：
+**解决方法：**
 ```bash
 # 检查容器状态
 docker ps -a | grep astrbot
 
 # 检查端口监听
-netstat -tlnp | grep 6100
+netstat -tlnp | grep 8080
 # 或
-ss -tlnp | grep 6100
+ss -tlnp | grep 8080
 ```
 
 #### 问题 2：No route to host
 
 **原因**：Docker 容器网络配置问题
 
-**解决方法**：
+**解决方法：**
 ```yaml
 # 在 docker-compose.yml 中添加
-network_mode: bridge  # 或根据 OpenResty 配置调整
+network_mode: bridge  # 或根据实际情况调整
 ```
 
 #### 问题 3：GitHub webhook 超时
 
-**原因**：端口映射正确，但 Cloudflare 反向代理未正确转发
+**原因**：端口映射正确，但反向代理未正确转发
 
 **解决方法**：
-参考上面的 "配置 GitHub Webhook" 章节，确保 Cloudflare 或其他反向代理配置正确。
+1. 检查反向代理配置
+2. 确保反向代理正确转发到你的服务器
+3. 检查反向代理日志
 
 ## 目录结构
 
@@ -397,52 +410,6 @@ astrbot_plugin_github_webhook/
 - [ ] Agent 集成（智能消息生成）
 - [ ] 分支过滤（仅监听 main 分支）
 - [ ] 多目标支持（不同事件发到不同群组）
-
-## 故障排查
-
-### 问题：Webhook 收不到消息
-
-**检查清单：**
-1. AstrBot 是否正常运行
-2. 插件是否已加载（查看日志）
-3. 端口 8080 是否开放（使用 `telnet 服务器IP 8080` 测试）
-4. GitHub Webhook 配置的 URL 是否正确
-5. 服务器防火墙/安全组是否开放端口
-
-### 问题：收到 Webhook 但未转发消息
-
-**检查清单：**
-1. `target_umo` 配置是否正确
-2. UMO 格式是否为 `platform_id:GroupMessage:群号`
-3. AstrBot 是否能正常发送消息（手动测试）
-4. 查看日志中的错误信息
-
-### 问题：日志显示 "Platform not found"
-
-**原因：** UMO 中的 platform_id 错误
-
-**解决方法：**
-1. 在目标群组发送 `/sid` 获取正确的 UMO
-2. 使用返回的 UMO 更新配置
-
-### 问题：日志显示 "Invalid signature"
-
-**原因：** Webhook Secret 配置不正确或未同步
-
-**解决方法：**
-1. 检查 GitHub 仓库 Webhook 设置中的 Secret
-2. 确保插件配置中的 `webhook_secret` 与 GitHub 设置一致
-3. 更新配置后重启插件
-
-### 问题：日志显示 "Rate limit exceeded"
-
-**原因：** 请求数量超过配置的速率限制
-
-**解决方法：**
-1. 增加 `rate_limit` 配置值（默认 10 请求/分钟）
-2. 设置为 0 禁用速率限制（不推荐）
-3. 检查是否有恶意请求导致限流
-3. 重启插件
 
 ## 贡献
 
