@@ -145,7 +145,8 @@ class GitHubWebhookPlugin(Star):
             return
 
         try:
-            message_chain = api.MessageChain(chain=[Plain(message)])
+            # 正确构建消息链：Plain 组件直接作为参数，不是 chain 参数
+            message_chain = api.MessageChain([Plain(message)])
             result = await self.context.send_message(self.target_umo, message_chain)
             logger.info(
                 f"GitHub Webhook: Message sent to {self.target_umo}, result: {result}"
@@ -155,7 +156,10 @@ class GitHubWebhookPlugin(Star):
                     f"GitHub Webhook: Platform not found for {self.target_umo}"
                 )
         except Exception as e:
-            logger.error(f"GitHub Webhook: Failed to send message: {e}", exc_info=True)
+            # 记录完整错误信息但不传播异常
+            logger.error(f"GitHub Webhook: Failed to send message: {e}")
+            logger.error(f"GitHub Webhook: Error type: {type(e).__name__}")
+            logger.error(f"GitHub Webhook: Error details: {str(e)}")
 
     async def terminate(self):
         if self.site:
