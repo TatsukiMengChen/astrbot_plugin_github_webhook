@@ -2,27 +2,22 @@
 
 import asyncio
 import json
-import re
-from aiohttp import web
-from astrbot.api.star import Context, Star, register
-from astrbot.api import all as api, AstrBotConfig
-from astrbot.api import logger
-from astrbot.api.message_components import Plain
 
-from .handlers.push_handler import handle_push_event
+from aiohttp import web
+
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api import all as api
+from astrbot.api.message_components import Plain
+from astrbot.api.star import Context, Star
+
+from .config import PluginConfig
 from .handlers.issues_handler import handle_issues_event
 from .handlers.pull_request_handler import handle_pull_request_event
+from .handlers.push_handler import handle_push_event
 from .utils.rate_limiter import RateLimiter
 from .utils.verify_signature import verify_signature
 
 
-@register(
-    "github_webhook",
-    "TatsukiMengChen",
-    "GitHub Webhook 接收插件 - 将 GitHub 事件转发到聊天平台",
-    "0.3.0",
-    "https://github.com/TatsukiMengChen/astrbot_plugin_github_webhook",
-)
 class GitHubWebhookPlugin(Star):
     """GitHub Webhook receiver plugin."""
 
@@ -32,91 +27,21 @@ class GitHubWebhookPlugin(Star):
         self.app.router.add_post("/webhook", self.handle_webhook)
         self.runner = None
         self.site = None
+        self.cfg = PluginConfig(config)
 
-        self.port = config.get("port", 8080)
-        self.target_umo = config.get("target_umo", "")
-        self.webhook_secret = config.get("webhook_secret", "")
-        self.rate_limit = config.get("rate_limit", 10)
-
-        # Agent 配置读取（兼容字符串和布尔值）
-        enable_agent_config = config.get("enable_agent", "false")
-        # 正确判断：只有明确的启用值才设为 True
-        if isinstance(enable_agent_config, bool):
-            self.enable_agent = enable_agent_config
-        elif isinstance(enable_agent_config, str):
-            self.enable_agent = enable_agent_config.lower() in (
-                "true",
-                "1",
-                "yes",
-                "on",
-            )
-        else:
-            self.enable_agent = False
-
-        self.llm_provider_id = config.get("llm_provider_id", "")
-        self.agent_timeout = int(config.get("agent_timeout", "30") or 30)
-        self.agent_system_prompt = config.get("agent_system_prompt", "")
-
-        # Initialize rate limiter (0 means no limit)
-        if self.rate_limit > 0:
-            self.rate_limiter = RateLimiter(max_requests=self.rate_limit)
+        if self.cfg.rate_limit > 0:
+            self.rate_limiter = RateLimiter(max_requests=self.cfg.rate_limit)
         else:
             self.rate_limiter = None
-
-        # 配置验证和完整日志
-        logger.info("=" * 60)
-        logger.info("GitHub Webhook: Configuration loaded")
-        logger.info(f"  target_umo: {self.target_umo}")
-        logger.info(f"  enable_agent: {self.enable_agent}")
-        logger.info(f"  llm_provider_id: {self.llm_provider_id or '(default)'}")
-        logger.info(f"  agent_timeout: {self.agent_timeout}s")
-        logger.info(
-            f"  agent_system_prompt: {len(self.agent_system_prompt) if self.agent_system_prompt else 0} chars"
-        )
-        logger.info(f"  rate_limit: {self.rate_limit} req/min")
-        logger.info("=" * 60)
-
-        if not self.target_umo:
-            logger.warning(
-                "GitHub Webhook: target_umo not configured, plugin may not work!"
-            )
-
-        if self.webhook_secret:
-            logger.info("GitHub Webhook: Signature verification enabled")
-        else:
-            logger.warning(
-                "GitHub Webhook: No webhook_secret configured, "
-                "signature verification disabled (not recommended for production)"
-            )
-
-        if self.rate_limiter:
-            logger.info(
-                f"GitHub Webhook: Rate limiting enabled "
-                f"({self.rate_limit} requests/minute)"
-            )
-
-        # LLM 配置日志
-        if self.enable_agent:
-            logger.info("GitHub Webhook: LLM mode enabled")
-            if self.llm_provider_id:
-                logger.info(
-                    f"GitHub Webhook: Using LLM provider ID: {self.llm_provider_id}"
-                )
-            else:
-                logger.info("GitHub Webhook: Using default LLM provider")
-            if self.agent_system_prompt:
-                logger.info("GitHub Webhook: Custom system prompt configured")
-        else:
-            logger.info("GitHub Webhook: LLM mode disabled, using default templates")
 
         asyncio.create_task(self.start_server())
 
     async def start_server(self):
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
-        self.site = web.TCPSite(self.runner, "0.0.0.0", self.port)
+        self.site = web.TCPSite(self.runner, "0.0.0.0", self.cfg.port)
         await self.site.start()
-        logger.info(f"GitHub Webhook server started on port {self.port}")
+        logger.info(f"GitHub Webhook server started on port {self.cfg.port}")
 
     async def handle_webhook(self, request: web.Request):
         event_type = request.headers.get("X-GitHub-Event", "unknown")
@@ -154,8 +79,8 @@ class GitHubWebhookPlugin(Star):
             return web.Response(status=400, text="Failed to read request")
 
         # Signature verification
-        if self.webhook_secret and signature:
-            if not verify_signature(payload_bytes, signature, self.webhook_secret):
+        if self.cfg.webhook_secret and signature:
+            if not verify_signature(payload_bytes, signature, self.cfg.webhook_secret):
                 logger.warning("GitHub Webhook: Invalid signature - request rejected")
                 return web.Response(status=401, text="Invalid signature")
 
@@ -180,7 +105,7 @@ class GitHubWebhookPlugin(Star):
             return web.Response(status=500, text="Internal server error")
 
         if message:
-            if self.enable_agent:
+            if self.cfg.enable_agent:
                 await self.send_with_agent(message, data, event_type)
             else:
                 await self.send_message(message)
@@ -216,23 +141,23 @@ class GitHubWebhookPlugin(Star):
             # 诊断日志
             logger.info("=" * 60)
             logger.info(f"GitHub Webhook: LLM Processing for {event_type} event")
-            logger.info(f"  Provider: {self.llm_provider_id or '(default)'}")
+            logger.info(f"  Provider: {self.cfg.llm_provider_id or '(default)'}")
             logger.info(f"  Input length: {len(llm_input)} chars")
             logger.info(f"  Input preview (first 300 chars): {llm_input[:300]}...")
-            if self.agent_system_prompt:
+            if self.cfg.agent_system_prompt:
                 logger.info(
-                    f"  System prompt length: {len(self.agent_system_prompt)} chars"
+                    f"  System prompt length: {len(self.cfg.agent_system_prompt)} chars"
                 )
             logger.info("=" * 60)
 
             # 获取 LLM provider ID
-            if self.llm_provider_id:
-                provider_id = self.llm_provider_id
+            if self.cfg.llm_provider_id:
+                provider_id = self.cfg.llm_provider_id
             else:
                 # 使用默认 provider
                 try:
                     provider_id = await self.context.get_current_chat_provider_id(
-                        self.target_umo
+                        self.cfg.target_umo
                     )
                     logger.info(
                         f"GitHub Webhook: Using default provider: {provider_id}"
@@ -250,11 +175,9 @@ class GitHubWebhookPlugin(Star):
                     self.context.llm_generate(
                         chat_provider_id=provider_id,
                         prompt=llm_input,
-                        system_prompt=self.agent_system_prompt
-                        if self.agent_system_prompt
-                        else None,
+                        system_prompt=self.cfg.agent_system_prompt or None,
                     ),
-                    timeout=self.agent_timeout,
+                    timeout=self.cfg.agent_timeout,
                 )
                 logger.info(
                     f"GitHub Webhook: LLM response received, length: {len(llm_response.completion_text) if llm_response else 0}"
@@ -305,18 +228,18 @@ class GitHubWebhookPlugin(Star):
 
             except asyncio.TimeoutError:
                 logger.error(
-                    f"GitHub Webhook: LLM timeout after {self.agent_timeout} seconds, falling back to template"
+                    f"GitHub Webhook: LLM timeout after {self.cfg.agent_timeout} seconds, falling back to template"
                 )
                 await self.send_message(message)
 
         except Exception as e:
             # LLM 调用失败，使用模板作为降级方案
             logger.error(f"GitHub Webhook: LLM invocation failed: {e}")
-            logger.error(f"GitHub Webhook: Falling back to default template")
+            logger.error("GitHub Webhook: Falling back to default template")
             await self.send_message(message)
 
     async def send_message(self, message: str):
-        if not self.target_umo:
+        if not self.cfg.target_umo:
             logger.error(
                 "GitHub Webhook: Cannot send message - target_umo not configured"
             )
@@ -324,13 +247,13 @@ class GitHubWebhookPlugin(Star):
 
         try:
             message_chain = api.MessageChain([Plain(message)])
-            result = await self.context.send_message(self.target_umo, message_chain)
+            result = await self.context.send_message(self.cfg.target_umo, message_chain)
             logger.info(
-                f"GitHub Webhook: Message sent to {self.target_umo}, result: {result}"
+                f"GitHub Webhook: Message sent to {self.cfg.target_umo}, result: {result}"
             )
             if not result:
                 logger.warning(
-                    f"GitHub Webhook: Platform not found for {self.target_umo}"
+                    f"GitHub Webhook: Platform not found for {self.cfg.target_umo}"
                 )
         except Exception as e:
             # 记录完整错误信息但不传播异常
