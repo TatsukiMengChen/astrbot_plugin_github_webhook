@@ -1,6 +1,12 @@
 """AstrBot GitHub Webhook Plugin - Entry point."""
 
+import sys
+from pathlib import Path
+
 from astrbot.api.star import Context, Star, register
+
+# 将 src/ 添加到 sys.path，使 Python 能找到模块
+sys.path.insert(0, str(Path(__file__).parent))
 
 from src.core.plugin import GitHubWebhookPlugin
 
