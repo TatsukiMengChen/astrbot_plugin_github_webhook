@@ -108,8 +108,8 @@ LLM 处理超时时间（秒）。
 ```
 
 **提示词模板**：
-查看 `prompts/` 目录获取预置的系统提示词：
-- [默认 Prompt](../prompts/default.md) - 通用 GitHub 事件消息生成提示词
+查看 `templates/` 目录获取预置的系统提示词：
+- [默认 Prompt](../templates/default.md) - 通用 GitHub 事件消息生成提示词
 
 **注意事项**：
 - 系统提示词过长（如 50+ 行）会占用大量 token 空间
