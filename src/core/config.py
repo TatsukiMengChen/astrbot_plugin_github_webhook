@@ -1,4 +1,5 @@
-# config.py
+"""GitHub Webhook Plugin configuration management."""
+
 from __future__ import annotations
 
 from collections.abc import MutableMapping
@@ -35,7 +36,6 @@ class ConfigNode:
             self._data[key] = value
             return
         object.__setattr__(self, key, value)
-
 
 
 class PluginConfig(ConfigNode):

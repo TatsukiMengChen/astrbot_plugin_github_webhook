@@ -6,25 +6,33 @@
 
 ```
 astrbot_plugin_github_webhook/
-├── main.py                     # 插件主文件
-├── config.py                   # 插件配置管理（强类型访问）
+├── src/                          # Python 源代码目录
+│   ├── core/                 # 核心管理层
+│   │   ├── __init__.py
+│   │   ├── config.py        # PluginConfig 类（配置管理）
+│   │   ├── plugin.py        # GitHubWebhookPlugin 类（插件实现）
+│   │   └── constants.py     # 常量定义
+│   ├── handlers/              # 事件处理层
+│   │   ├── __init__.py
+│   │   ├── issues_handler.py
+│   │   ├── pull_request_handler.py
+│   │   └── push_handler.py
+│   ├── formatters/             # 消息格式化层
+│   │   ├── __init__.py
+│   │   ├── issues_formatter.py
+│   │   ├── pull_request_formatter.py
+│   │   └── push_formatter.py
+│   ├── utils/                 # 工具层
+│   │   ├── __init__.py
+│   │   ├── rate_limiter.py     # 请求速率限制器
+│   │   └── verify_signature.py # Webhook 签名验证
+│   └── services/              # 业务服务层
+│       ├── __init__.py
+│       └── llm_service.py      # LLM 调用服务
+├── main.py                     # 插件入口文件（AstrBot 加载点）
 ├── metadata.yaml               # 插件元数据
 ├── requirements.txt             # Python 依赖
 ├── _conf_schema.json           # 配置架构（WebUI 使用）
-├── handlers/                  # 事件处理器模块
-│   ├── __init__.py
-│   ├── push_handler.py         # Push 事件处理
-│   ├── issues_handler.py       # Issues 事件处理
-│   └── pull_request_handler.py # Pull Request 事件处理
-├── formatters/                # 消息格式化模块
-│   ├── __init__.py
-│   ├── push_formatter.py       # Push 消息格式化
-│   ├── issues_formatter.py     # Issues 消息格式化
-│   └── pull_request_formatter.py # Pull Request 消息格式化
-├── utils/                     # 工具模块
-│   ├── __init__.py
-│   ├── rate_limiter.py         # 请求速率限制器
-│   └── verify_signature.py     # Webhook 签名验证
 ├── docs/                      # 文档目录
 │   ├── index.md               # 文档索引
 │   ├── 01-installation.md     # 安装指南
@@ -34,69 +42,97 @@ astrbot_plugin_github_webhook/
 │   ├── 05-troubleshooting.md # 故障排查
 │   ├── 06-development.md     # 开发相关
 │   └── 07-project-structure.md # 项目结构（本文件）
-├── prompts/                   # LLM 提示词示例
+├── templates/                 # Prompt 模板目录
 │   └── default.md            # 默认系统提示词
-├── .gitignore                # Git 忽略文件
-├── LICENSE                   # MIT 许可证
-└── README.md                 # 项目说明
+├── tests/                     # 测试目录
+│   ├── __init__.py
+│   └── test_config.py        # 配置测试
+├── LICENSE                    # MIT 许可证
+└── README.md                  # 项目说明
 ```
 
-## 核心模块说明
+## 设计理念
 
-### main.py
+### 1. src/ 目录 - 代码与资源分离
 
-插件的入口文件，负责：
-- aiohttp 服务器启动
-- Webhook 路由处理
-- 事件分发到对应的 Handler
-- LLM 消息生成逻辑
-- 消息发送到聊天平台
+将所有 Python 源代码放入 `src/` 目录，遵循 Python 项目最佳实践：
 
-### config.py
+**优势**：
+- 代码和资源（文档、模板、配置）清晰分离
+- 符合 Python Packaging User Guide 推荐的 `src/` 布局
+- 便于测试和打包
+- 便于未来可能的多语言支持（src/ 下的包结构）
 
-强类型配置管理，提供：
-- ConfigNode 基类：字典到强类型属性的转换
-- PluginConfig 类：所有配置字段的类型定义
-- 配置验证和日志输出
+### 2. 分层架构
 
-### handlers/
+插件采用清晰的三层架构：
 
-按事件类型拆分的处理器模块：
+```
+main.py (入口层)
+    ↓
+src/core/ (管理层)
+    ↓
+src/handlers/ (业务层)
+    ↓
+src/formatters/ + src/utils/ (工具层)
+```
 
-**push_handler.py**
-- 处理 GitHub Push 事件
-- 提取：推送者、仓库、分支、commit 信息
-- 调用 formatter 生成消息
+### 3. 模块职责
 
-**issues_handler.py**
-- 处理 GitHub Issues 事件
-- 支持：opened, closed, reopened 等状态
-- 提取：action, issue 信息, URL
+| 模块 | 职责 |
+|--------|--------|
+| **main.py** | 插件入口，代理到实际的 GitHubWebhookPlugin 类 |
+| **src/core/config.py** | 配置管理，提供强类型属性访问 |
+| **src/core/plugin.py** | 插件核心实现，Webhook 服务器和事件分发 |
+| **src/core/constants.py** | 常量定义（端口、事件类型、动作等）|
+| **src/handlers/\*** | 处理不同类型的 GitHub 事件 |
+| **src/formatters/\*** | 将 GitHub Payload 转换为可读的消息文本 |
+| **src/utils/rate_limiter.py** | 基于滑动窗口的请求限流器 |
+| **src/utils/verify_signature.py** | GitHub Webhook HMAC-SHA256 签名验证 |
+| **src/services/llm_service.py** | LLM 消息生成服务 |
 
-**pull_request_handler.py**
-- 处理 GitHub Pull Request 事件
-- 支持：opened, closed, reopened, synchronize 等状态
-- 提取：action, PR 信息, 分支信息
+## 数据流
 
-### formatters/
+```
+GitHub Webhook
+    ↓
+main.py: PluginEntry.handle_webhook()
+    ↓
+src/core/plugin.py: GitHubWebhookPlugin.handle_webhook()
+    ↓ (限流检查、签名验证)
+src/handlers/*.py: handle_xxx_event()
+    ↓
+src/formatters/*.py: format_xxx_message()
+    ↓
+src/core/plugin.py: send_message() 或 send_with_agent()
+    ↓ (如果启用 LLM: src/services/llm_service.py)
+    ↓
+聊天平台 (QQ/微信等)
+```
 
-将 GitHub Payload 转换为可读的消息文本：
-- 格式化输出包含关键信息（作者、仓库、链接等）
-- 使用 emoji 增强可读性
+## 导入规范
 
-### utils/
+### 相对导入（src/ 内部）
 
-通用工具函数：
+```python
+# 同级模块
+from .config import PluginConfig
+from .plugin import GitHubWebhookPlugin
 
-**rate_limiter.py**
-- RateLimiter 类：基于滑动窗口的请求限流
-- 防止高频 Webhook 导致的消息轰炸
-- 提供 `is_allowed()` 和 `get_usage()` 方法
+# 跨层级导入（需要回到 src/）
+from ..handlers.issues_handler import handle_issues_event
+from ..formatters.push_formatter import format_push_message
+from ..utils.rate_limiter import RateLimiter
+from ..services.llm_service import send_with_agent
+```
 
-**verify_signature.py**
-- Webhook 签名验证函数
-- 使用 HMAC-SHA256 验证 GitHub 请求
-- 防止恶意请求
+### 绝对导入（AstrBot API）
+
+```python
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.star import Context, Star, register
+from astrbot.api import all as api
+```
 
 ## 依赖项
 
@@ -112,21 +148,37 @@ aiohttp>=3.11.0
 - `astrbot.api.star.Context` - 插件上下文
 - `astrbot.api.message_components` - 消息组件
 
-## 数据流
+## 测试
 
+### 运行测试
+
+```bash
+cd tests
+pytest test_config.py -v
 ```
-GitHub Webhook
-    ↓
-main.py:handle_webhook()
-    ↓ (限流检查、签名验证)
-handlers/*.py
-    ↓
-formatters/*.py
-    ↓
-main.py:send_with_agent() 或 send_message()
-    ↓
-聊天平台 (QQ/微信等)
-```
+
+### 测试覆盖
+
+- `tests/test_config.py` - 配置类测试
+
+## 扩展指南
+
+### 添加新的事件处理器
+
+1. 在 `src/handlers/` 创建新文件 `new_event_handler.py`
+2. 实现处理函数 `async def handle_new_event(data, context):`
+3. 在 `src/core/plugin.py` 的 `handle_webhook()` 中添加路由
+4. 在 `src/formatters/` 创建对应的格式化器（如需要）
+
+### 添加新的工具类
+
+1. 在 `src/utils/` 创建新文件 `new_util.py`
+2. 在相关模块中导入使用
+
+### 添加新的服务
+
+1. 在 `src/services/` 创建新文件 `new_service.py`
+2. 在 `src/core/plugin.py` 或其他模块中导入使用
 
 ## 相关文档
 

@@ -81,32 +81,36 @@ sudo systemctl restart astrbot
 - [使用示例](docs/03-usage.md) - 查看各种事件的消息格式
 - [部署指南](docs/04-deployment.md) - 防火墙、Docker 部署
 - [故障排查](docs/05-troubleshooting.md) - 常见问题解决方案
-- [项目结构](docs/07-project-structure.md) - 了解代码组织
+- [项目结构](docs/07-project-structure.md) - 代码组织和设计理念
 - [开发相关](docs/06-development.md) - 贡献指南和路线图
 
 ## LLM Prompt 示例
 
-在 `prompts/` 目录中提供了预置的系统提示词：
+在 `templates/` 目录中提供了预置的系统提示词：
 
-- [默认 Prompt](prompts/default.md) - 通用 GitHub 事件消息生成提示词
+- [默认 Prompt](templates/default.md) - 通用 GitHub 事件消息生成提示词
 
 ## 目录结构
 
 ```
 astrbot_plugin_github_webhook/
-├── main.py                     # 插件主文件
-├── config.py                   # 插件配置管理
+├── src/                          # Python 源代码
+│   ├── core/                 # 核心管理
+│   ├── handlers/              # 事件处理
+│   ├── formatters/             # 消息格式化
+│   ├── utils/                 # 工具函数
+│   └── services/              # 业务服务
+├── main.py                     # 插件入口
 ├── metadata.yaml               # 插件元数据
-├── requirements.txt             # Python 依赖
-├── _conf_schema.json           # 配置架构（WebUI 使用）
-├── handlers/                  # 事件处理器模块
-├── formatters/                # 消息格式化模块
-├── utils/                     # 工具模块
-├── docs/                      # 文档目录
-├── prompts/                   # LLM 提示词示例
-├── LICENSE                   # MIT 许可证
-└── README.md                 # 本文件
+├── _conf_schema.json           # 配置 Schema
+├── docs/                      # 详细文档
+├── templates/                 # Prompt 模板
+├── tests/                     # 测试代码
+├── LICENSE                    # MIT 许可证
+└── README.md                  # 本文件
 ```
+
+详见 [项目结构文档](docs/07-project-structure.md)
 
 ## 依赖
 
