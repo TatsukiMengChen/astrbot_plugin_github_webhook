@@ -21,14 +21,19 @@
   "rate_limit": {
     "description": "请求速率限制",
     "type": "int",
+    "slider": {
+      "min": 0,
+      "max": 60,
+      "step": 1
+    },
     "default": 10,
     "hint": "每分钟允许的最大请求数。设置为 0 表示不限制。"
   },
   "enable_agent": {
     "description": "启用 LLM 生成消息",
-    "type": "text",
-    "default": "false",
-    "hint": "是否使用 LLM 生成个性化的 GitHub 事件消息。启用后，LLM 会根据 GitHub 事件内容生成消息。支持值：\"true\" 或 \"false\""
+    "type": "bool",
+    "default": false,
+    "hint": "是否使用 LLM 生成个性化的 GitHub 事件消息。启用后，LLM 会根据 GitHub 事件内容生成消息"
   },
   "llm_provider_id": {
     "description": "LLM Provider ID",
@@ -39,13 +44,19 @@
   "agent_timeout": {
     "description": "LLM 超时时间（秒）",
     "type": "int",
-    "default": 30,
+    "slider": {
+      "min": 30,
+      "max": 120,
+      "step": 1
+    },
+    "default": 60,
     "hint": "LLM 处理的超时时间，单位为秒。建议设置为 30-60 秒。"
   },
   "agent_system_prompt": {
     "description": "LLM 自定义系统提示词",
     "type": "text",
     "default": "",
-    "hint": "为 LLM 添加自定义的系统提示词，可以定义消息的风格、语气等。留空则使用默认提示词。"
+    "hint": "为 LLM 添加自定义的系统提示词，可以定义消息的风格、语气等。留空则使用默认提示词。",
+    "_special": "select_provider"
   }
 }
