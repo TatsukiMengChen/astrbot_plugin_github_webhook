@@ -1,11 +1,12 @@
 """GitHub Webhook Plugin core implementation."""
 
-import asyncio
+import json
 from aiohttp import web
 
 from astrbot.api import all as api
 from astrbot.api.message_components import Plain
 from astrbot.api.star import Context, Star
+from astrbot.api import logger
 
 from .config import PluginConfig
 from .constants import DEFAULT_PORT
@@ -32,14 +33,20 @@ class GitHubWebhookPlugin(Star):
         else:
             self.rate_limiter = None
 
-        asyncio.create_task(self.start_server())
-
     async def start_server(self):
+        # Clean up any existing server instance
+        if self.site:
+            await self.site.stop()
+            logger.info("GitHub Webhook: Cleaned up existing server instance")
+        if self.runner:
+            await self.runner.cleanup()
+            logger.info("GitHub Webhook: Cleaned up existing runner")
+
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, "0.0.0.0", self.cfg.port)
         await self.site.start()
-        logger.info(f"GitHub Webhook server started on port {self.cfg.port}")
+        logger.info(f"GitHub Webhook: Server started on port {self.cfg.port}")
 
     async def handle_webhook(self, request: web.Request):
         event_type = request.headers.get("X-GitHub-Event", "unknown")
@@ -68,7 +75,7 @@ class GitHubWebhookPlugin(Star):
         # Read payload
         try:
             payload_bytes = await request.read()
-            data = __import__("json").loads(payload_bytes.decode("utf-8"))
+            data = json.loads(payload_bytes.decode("utf-8"))
         except json.JSONDecodeError as e:
             logger.error(f"GitHub Webhook: Failed to parse JSON: {e}")
             return web.Response(status=400, text="Invalid JSON")
@@ -136,8 +143,10 @@ class GitHubWebhookPlugin(Star):
             logger.error(f"GitHub Webhook: Error details: {str(e)}")
 
     async def terminate(self):
+        logger.info("GitHub Webhook: Shutting down server...")
         if self.site:
             await self.site.stop()
-            logger.info("GitHub Webhook server stopped")
+            logger.info("GitHub Webhook: Server stopped")
         if self.runner:
             await self.runner.cleanup()
+            logger.info("GitHub Webhook: Runner cleaned up")
